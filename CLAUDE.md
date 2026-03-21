@@ -1,4 +1,4 @@
-# PlaNEWtary Management Plugin Suite
+# Planets.nu Plugin Suite
 
 ## Project Goal
 
@@ -152,6 +152,7 @@ Split into independent userscripts that can be installed separately:
 
 - `inputs/vgap-object-snapshot.txt` — Dump of all `vgap` properties and functions with argument counts. Use this to find API functions before asking the user or implementing formulas.
 - `inputs/game-css.txt` — All active CSS rules from the game client. Check this when styling plugin UI to understand inherited styles and avoid conflicts (e.g. the game sets `span { display: block }`).
+- `inputs/nudata.json` — Full dump of the `nudata` global object. Contains game data definitions: native types, native governments, player races, hull specs, advantages, and UI strings. Use for lookups like `nudata.nativetypes` instead of hardcoding game data.
 
 These are static snapshots and may become outdated. When in doubt, ask the user to re-extract or verify in the browser console.
 

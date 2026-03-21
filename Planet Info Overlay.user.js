@@ -145,11 +145,8 @@
      * Get native race name
      */
     function getNativeRaceName(raceId) {
-        const races = [
-            'None', 'Humanoid', 'Bovinoid', 'Reptilian', 'Avian',
-            'Amorphous', 'Insectoid', 'Amphibian', 'Ghipsoldal', 'Siliconoid'
-        ];
-        return races[raceId] || 'Unknown';
+        const entry = nudata.nativetypes.find(n => n.id === raceId);
+        return entry ? entry.name : 'Unknown';
     }
 
     /**

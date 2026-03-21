@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Planets.nu - Economy Management
 // @namespace    https://planets.nu/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Building and taxation automation for Planets.nu
 // @author       Leonce
 // @match        https://planets.nu/*
@@ -19,7 +19,7 @@
     // =========================================================================
 
     const PLUGIN_NAME = 'economyManagement';
-    const PLUGIN_VERSION = '0.1.0';
+    const PLUGIN_VERSION = '0.1.1';
 
     // Note type for data persistence (original plugin uses -174481, but data formats are incompatible)
     const NOTE_TYPE = 72;
@@ -596,29 +596,13 @@
         }
 
         /**
-         * Calculate maximum of a structure type based on population
-         * Formula: if clans <= baseAmount: max = clans
-         *          else: max = floor(baseAmount + sqrt(clans - baseAmount))
-         * @param {object} planet - The planet object
-         * @param {number} baseAmount - Base amount (100 for factories, 200 for mines, 50 for defense)
-         * @returns {number} Maximum structures
-         */
-        maxBuilding(planet, baseAmount) {
-            const clans = planet.clans || 0;
-            if (clans <= baseAmount) {
-                return clans;
-            }
-            return Math.floor(baseAmount + Math.sqrt(clans - baseAmount));
-        }
-
-        /**
          * Calculate maximum structures that can be built on a planet
          */
         getMaxStructures(planet) {
             return {
-                factories: this.maxBuilding(planet, 100),
-                mines: this.maxBuilding(planet, 200),
-                defense: this.maxBuilding(planet, 50)
+                factories: vgap.maxBuilding(planet, 100),
+                mines: vgap.maxBuilding(planet, 200),
+                defense: vgap.maxBuilding(planet, 50)
             };
         }
 
@@ -672,7 +656,7 @@
 
             const costs = this.getBuildCosts()[type];
             const baseAmounts = { factories: 100, mines: 200, defense: 50 };
-            const maxAllowed = this.maxBuilding(planet, baseAmounts[type]);
+            const maxAllowed = vgap.maxBuilding(planet, baseAmounts[type]);
             const currentCount = planet[type] || 0;
 
             // Check if already at or over max
@@ -736,50 +720,69 @@
         }
 
         /**
-         * Calculate ratio build (factories and mines at a ratio)
-         * @param {number} numFactories - Target number of factories to add
-         * @param {number} numMines - Target number of mines to add
+         * Calculate ratio build (factories and mines maintaining a planet-wide ratio).
+         * Interleaves factory and mine building so the total planet ratio stays close
+         * to the target throughout the build-up, not just at the end.
+         * @param {number} currentFactories - Current factories on planet
+         * @param {number} currentMines - Current mines on planet
+         * @param {number} maxFactories - Target factory count
+         * @param {number} maxMines - Target mine count
          * @param {number} ratio - Factory:Mine ratio (e.g., 7 means 7:1)
          * @param {boolean} burnSupplies - Whether to burn supplies for MC
          * @param {number} mc - Available megacredits
          * @param {number} supplies - Available supplies
          * @returns {object} {facts, mines} - Number of each to build
          */
-        calcRatioBuild(numFactories, numMines, ratio, burnSupplies, mc, supplies) {
+        calcRatioBuild(currentFactories, currentMines, maxFactories, maxMines, ratio, burnSupplies, mc, supplies) {
             const result = { facts: 0, mines: 0 };
 
             let supTemp = supplies;
             let mcTemp = mc;
-            let cnt = 0;
+            let facts = currentFactories;
+            let mines = currentMines;
 
-            for (let i = 0; i < numFactories; i++) {
-                // Try to build a factory
-                if (supTemp >= 1 && mcTemp >= 3) {
-                    result.facts++;
-                    supTemp -= 1;
-                    mcTemp -= 3;
-                } else if (burnSupplies && mcTemp < 3 && supTemp >= (4 - mcTemp)) {
-                    // Burn supplies to build
-                    result.facts++;
-                    supTemp -= (4 - mcTemp);
-                    mcTemp = 0;
+            while (facts < maxFactories || mines < maxMines) {
+                // Determine what to build next based on total planet ratio.
+                // Target: mines should be at least floor(facts / ratio).
+                let buildMine;
+                if (facts >= maxFactories) {
+                    buildMine = true;  // Factories at target, only mines remain
+                } else if (mines >= maxMines) {
+                    buildMine = false; // Mines at target, only factories remain
                 } else {
-                    break; // Can't build more factories
+                    // Build whichever is more behind relative to the ratio
+                    buildMine = mines < (facts / ratio | 0);
                 }
 
-                // Build a mine every 'ratio' factories
-                if (cnt % ratio === 0 && result.mines < numMines) {
+                if (buildMine) {
                     if (supTemp >= 1 && mcTemp >= 4) {
                         result.mines++;
+                        mines++;
                         supTemp -= 1;
                         mcTemp -= 4;
                     } else if (burnSupplies && mcTemp < 4 && supTemp >= (5 - mcTemp)) {
                         result.mines++;
+                        mines++;
                         supTemp -= (5 - mcTemp);
                         mcTemp = 0;
+                    } else {
+                        break;
+                    }
+                } else {
+                    if (supTemp >= 1 && mcTemp >= 3) {
+                        result.facts++;
+                        facts++;
+                        supTemp -= 1;
+                        mcTemp -= 3;
+                    } else if (burnSupplies && mcTemp < 3 && supTemp >= (4 - mcTemp)) {
+                        result.facts++;
+                        facts++;
+                        supTemp -= (4 - mcTemp);
+                        mcTemp = 0;
+                    } else {
+                        break;
                     }
                 }
-                cnt++;
             }
 
             return result;
@@ -866,13 +869,12 @@
 
             for (const instr of plan.instructions) {
                 if (instr.type === 'ratio') {
-                    // Ratio building: build factories and mines at a ratio
-                    const numFactories = Math.max(0, instr.maxFactories - workPlanet.factories);
-                    const numMines = Math.max(0, instr.maxMines - workPlanet.mines);
-
+                    // Ratio building: build factories and mines maintaining planet-wide ratio
                     const ratioBuild = this.calcRatioBuild(
-                        numFactories,
-                        numMines,
+                        workPlanet.factories,
+                        workPlanet.mines,
+                        instr.maxFactories,
+                        instr.maxMines,
                         instr.ratio,
                         plan.burnSupplies,
                         workPlanet.megacredits,
@@ -904,19 +906,6 @@
                         result.suppliesUsed += mineResult.suppliesUsed;
                         result.mcUsed += mineResult.mcUsed;
                         result.suppliesSold += mineResult.suppliesSold;
-                    }
-
-                    // Build remaining mines if any target left
-                    const remainingMines = Math.max(0, instr.maxMines - workPlanet.mines);
-                    if (remainingMines > 0) {
-                        const extraMineResult = this.buildStructure(
-                            workPlanet, 'mines', remainingMines,
-                            plan.burnSupplies, markChanged
-                        );
-                        result.minesBuilt += extraMineResult.built;
-                        result.suppliesUsed += extraMineResult.suppliesUsed;
-                        result.mcUsed += extraMineResult.mcUsed;
-                        result.suppliesSold += extraMineResult.suppliesSold;
                     }
                 } else {
                     // Simple building: factories, mines, or defense
@@ -1070,9 +1059,10 @@
          * @param {object} method - The tax method
          * @param {string} taxType - 'colonist' or 'native'
          * @param {boolean} preview - If true, calculate but don't apply
+         * @param {number} incomeBudget - Max MC this tax type may produce (shared 5000 MC cap)
          * @returns {object} Result with calculated rate and projected income
          */
-        execute(planet, method, taxType, preview = false) {
+        execute(planet, method, taxType, preview = false, incomeBudget = 5000) {
             const isNative = taxType === 'native';
 
             // Check minimum clans requirement
@@ -1114,11 +1104,12 @@
                         rate = this.findOptimalRate(planet, minHappy, isNative);
                     } else {
                         // Recovery phase: normally 0% tax to let happiness rise.
-                        // But if 0% would push happiness above 100 (the hard cap),
-                        // tax just enough to land at exactly 100 — no wasted recovery.
+                        // But if 0% would push happiness above maxHappy, start a new
+                        // tax cycle instead — tax down to minHappy. This is more
+                        // efficient long-term than waiting to hit exactly maxHappy.
                         const recoveryChange = this.calculateHappinessChange(planet, 0, isNative);
-                        if (currentHappy + recoveryChange > 100) {
-                            rate = this.findOptimalRate(planet, 100, isNative);
+                        if (currentHappy + recoveryChange > maxHappy) {
+                            rate = this.findOptimalRate(planet, minHappy, isNative);
                         } else {
                             rate = 0;
                         }
@@ -1152,10 +1143,13 @@
                 rate = Math.min(rate, 20);
             }
 
-            // Calculate projected income (capped at 5000 MC, the game limit)
-            const income = Math.min(5000, isNative
+            // Calculate projected income, capped at the remaining budget.
+            // The game enforces a shared 5000 MC cap across colonist + native tax:
+            // colonists are taxed first, then natives get whatever budget remains.
+            const rawIncome = isNative
                 ? this.calcNativeTaxIncome(planet, rate)
-                : this.calcColonistTaxIncome(planet, rate));
+                : this.calcColonistTaxIncome(planet, rate);
+            const income = Math.min(incomeBudget, rawIncome);
 
             // Apply if not preview
             if (!preview) {
@@ -1226,10 +1220,9 @@
         return vgap.nativeTaxAmount(planet, false);
     }
 
-    function getDisplayRaceName(planet) {
-        const races = ['None', 'Humanoid', 'Bovinoid', 'Reptilian', 'Avian',
-            'Amorphous', 'Insectoid', 'Amphibian', 'Ghipsoldal', 'Siliconoid'];
-        return races[planet.nativetype] || 'Unknown';
+    function getNativeRaceName(planet) {
+        const entry = nudata.nativetypes.find(n => n.id === planet.nativetype);
+        return entry ? entry.name : 'Unknown';
     }
 
     function planetTagsHtml(planet) {
@@ -1672,7 +1665,7 @@
          */
         _nativeStatsHtml(planet) {
             if (!planet.nativeclans || planet.nativetype === 0) return '';
-            const raceName = getDisplayRaceName(planet);
+            const raceName = getNativeRaceName(planet);
             const clans = planet.nativeclans;
             const happy = planet.nativehappypoints || 0;
             const delta = calcNativeHappyChange(planet);
@@ -3395,19 +3388,21 @@
                 }
 
                 // Apply colonist tax method
+                let colTaxIncome = 0;
                 const colTaxMethod = this.dataStore.getColonistTaxMethod(planet.id);
                 if (colTaxMethod) {
                     const result = this.taxEngine.execute(planet, colTaxMethod, 'colonist');
                     if (result.success && result.rate !== null) {
                         taxApplied++;
+                        colTaxIncome = result.income || 0;
                     }
                 }
 
-                // Apply native tax method
+                // Apply native tax method (budget = 5000 minus colonist income)
                 if (planet.nativeclans > 0) {
                     const natTaxMethod = this.dataStore.getNativeTaxMethod(planet.id);
                     if (natTaxMethod && this.vanillaDetector.canApplyNativeTax(planet)) {
-                        const result = this.taxEngine.execute(planet, natTaxMethod, 'native');
+                        const result = this.taxEngine.execute(planet, natTaxMethod, 'native', false, 5000 - colTaxIncome);
                         if (result.success && result.rate !== null) {
                             taxApplied++;
                         }
@@ -3461,19 +3456,21 @@
                 }
 
                 // Apply colonist tax method
+                let colTaxIncome = 0;
                 const colTaxMethod = this.dataStore.getColonistTaxMethod(planet.id);
                 if (colTaxMethod) {
                     const result = this.taxEngine.execute(planet, colTaxMethod, 'colonist');
                     if (result.success && result.rate !== null) {
                         taxApplied++;
+                        colTaxIncome = result.income || 0;
                     }
                 }
 
-                // Apply native tax method
+                // Apply native tax method (budget = 5000 minus colonist income)
                 if (planet.nativeclans > 0) {
                     const natTaxMethod = this.dataStore.getNativeTaxMethod(planet.id);
                     if (natTaxMethod && this.vanillaDetector.canApplyNativeTax(planet)) {
-                        const result = this.taxEngine.execute(planet, natTaxMethod, 'native');
+                        const result = this.taxEngine.execute(planet, natTaxMethod, 'native', false, 5000 - colTaxIncome);
                         if (result.success && result.rate !== null) {
                             taxApplied++;
                         }
@@ -3509,6 +3506,11 @@
 
             return {
                 processload() {
+                    // Horwasp (race 12) has no normal planet economy — skip entirely
+                    if (vgap.player && vgap.player.raceid === 12) {
+                        console.log('[Economy Management] Horwasp player detected, plugin disabled');
+                        return;
+                    }
                     self.init();
                 },
 
