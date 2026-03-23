@@ -1,2 +1,3 @@
 _old_references/*
 inputs/*
+!inputs/README.md
