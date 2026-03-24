@@ -1000,7 +1000,7 @@
                 for (let rate = 0; rate <= maxRate; rate++) {
                     if (this.calcNativeTaxIncome(planet, rate) >= maxIncome) {
                         // Check if the cap is eating more than we gain. If so,
-                        // drop one rate — the happiness cost isn't worth it.
+                        // drop rate by 1 — the happiness cost isn't worth it.
                         // Exception: if happiness still hits 100 at this rate,
                         // there's no real cost, so take the income.
                         const possibleIncome = this.calcNativeTaxIncome(planet, rate, true);
@@ -1010,7 +1010,11 @@
                                 const prevIncome = this.calcNativeTaxIncome(planet, rate - 1);
                                 const gained = maxIncome - prevIncome;
                                 const lost = possibleIncome - maxIncome;
-                                if (gained < lost) return rate - 1;
+                                // Only drop the rate if it actually improves happiness.
+                                // If both rates yield the same happiness change, the
+                                // extra capped income at the higher rate is free.
+                                const happyAtPrev = currentHappy + this.calculateHappinessChange(planet, rate - 1, true);
+                                if (gained < lost && happyAtPrev > resultingHappy) return rate - 1;
                             }
                         }
                         return rate;
