@@ -23,6 +23,7 @@
 
     // Note type for data persistence (original plugin uses -174481, but data formats are incompatible)
     const NOTE_TYPE = 72;
+    const DEFAULT_CUSTOM_BUILD_CODE = 'y-f-15-d-S-f-999-m-200';
 
     // Note IDs for different data types
     const NOTE_IDS = {
@@ -1840,10 +1841,10 @@
                     if (select.value === 'custom') {
                         // Pre-populate with code from previously selected method
                         const prevAssign = ds.buildAssignments[planetId];
-                        let code = '';
+                        let code = DEFAULT_CUSTOM_BUILD_CODE;
                         if (typeof prevAssign === 'object' && prevAssign.code) {
                             code = prevAssign.code;
-                        } else if (typeof prevAssign === 'string' && ds.buildMethods[prevAssign]) {
+                        } else if (typeof prevAssign === 'string' && prevAssign !== 'm' && ds.buildMethods[prevAssign]) {
                             code = ds.buildMethods[prevAssign].code;
                         }
                         ds.setBuildAssignment(planetId, { code });
@@ -3264,10 +3265,10 @@
                 buildSelect.onchange = () => {
                     if (buildSelect.value === 'custom') {
                         const prevAssign = ds.buildAssignments[planet.id];
-                        let code = '';
+                        let code = DEFAULT_CUSTOM_BUILD_CODE;
                         if (typeof prevAssign === 'object' && prevAssign.code) {
                             code = prevAssign.code;
-                        } else if (typeof prevAssign === 'string' && ds.buildMethods[prevAssign]) {
+                        } else if (typeof prevAssign === 'string' && prevAssign !== 'm' && ds.buildMethods[prevAssign]) {
                             code = ds.buildMethods[prevAssign].code;
                         }
                         ds.setBuildAssignment(planet.id, { code });
