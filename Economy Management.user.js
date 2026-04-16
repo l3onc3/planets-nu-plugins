@@ -869,12 +869,15 @@
 
             for (const instr of plan.instructions) {
                 if (instr.type === 'ratio') {
-                    // Ratio building: build factories and mines maintaining planet-wide ratio
+                    // Ratio building: build factories and mines maintaining planet-wide ratio.
+                    // Cap code targets at planet physical limits so the algorithm switches to
+                    // mine-only mode once factories are physically maxed (not just code-maxed).
+                    const planetMax = this.getMaxStructures(workPlanet);
                     const ratioBuild = this.calcRatioBuild(
                         workPlanet.factories,
                         workPlanet.mines,
-                        instr.maxFactories,
-                        instr.maxMines,
+                        Math.min(instr.maxFactories, planetMax.factories),
+                        Math.min(instr.maxMines, planetMax.mines),
                         instr.ratio,
                         plan.burnSupplies,
                         workPlanet.megacredits,
