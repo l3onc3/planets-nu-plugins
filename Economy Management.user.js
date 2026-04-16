@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Planets.nu - Economy Management
 // @namespace    https://planets.nu/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Building and taxation automation for Planets.nu
 // @author       Leonce
 // @match        https://planets.nu/*
@@ -19,7 +19,7 @@
     // =========================================================================
 
     const PLUGIN_NAME = 'economyManagement';
-    const PLUGIN_VERSION = '0.1.1';
+    const PLUGIN_VERSION = '0.1.2';
 
     // Note type for data persistence (original plugin uses -174481, but data formats are incompatible)
     const NOTE_TYPE = 72;
