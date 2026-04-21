@@ -652,7 +652,7 @@
          */
         buildStructure(planet, type, count, burnSupplies, markChanged = true) {
             if (count <= 0) {
-                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0 };
+                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0, resourceLimited: false };
             }
 
             const costs = this.getBuildCosts()[type];
@@ -660,13 +660,15 @@
             const maxAllowed = vgap.maxBuilding(planet, baseAmounts[type]);
             const currentCount = planet[type] || 0;
 
-            // Check if already at or over max
+            // Check if already at or over max (physical cap, not resource-limited)
             if (currentCount >= maxAllowed) {
-                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0 };
+                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0, resourceLimited: false };
             }
 
-            // Cap at max
-            let toBuild = Math.min(count, maxAllowed - currentCount);
+            // Cap at max (physical limit)
+            const capByMax = maxAllowed - currentCount;
+            const wanted = Math.min(count, capByMax);
+            let toBuild = wanted;
 
             // Cap by available supplies (always need 1 supply per structure)
             toBuild = Math.min(toBuild, planet.supplies);
@@ -679,8 +681,11 @@
                 toBuild = Math.min(toBuild, Math.floor(planet.megacredits / costs.mc));
             }
 
+            // Resource-limited: we wanted more than resources allowed (and weren't capped by physical max)
+            const resourceLimited = toBuild < wanted;
+
             if (toBuild <= 0) {
-                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0 };
+                return { built: 0, suppliesUsed: 0, mcUsed: 0, suppliesSold: 0, resourceLimited };
             }
 
             // Calculate resources used
@@ -716,7 +721,8 @@
                 built: toBuild,
                 suppliesUsed: suppliesUsed + suppliesSold,
                 mcUsed,
-                suppliesSold
+                suppliesSold,
+                resourceLimited
             };
         }
 
@@ -874,11 +880,13 @@
                     // Cap code targets at planet physical limits so the algorithm switches to
                     // mine-only mode once factories are physically maxed (not just code-maxed).
                     const planetMax = this.getMaxStructures(workPlanet);
+                    const maxF = Math.min(instr.maxFactories, planetMax.factories);
+                    const maxM = Math.min(instr.maxMines, planetMax.mines);
                     const ratioBuild = this.calcRatioBuild(
                         workPlanet.factories,
                         workPlanet.mines,
-                        Math.min(instr.maxFactories, planetMax.factories),
-                        Math.min(instr.maxMines, planetMax.mines),
+                        maxF,
+                        maxM,
                         instr.ratio,
                         plan.burnSupplies,
                         workPlanet.megacredits,
@@ -911,6 +919,13 @@
                         result.mcUsed += mineResult.mcUsed;
                         result.suppliesSold += mineResult.suppliesSold;
                     }
+
+                    // Stop if ratio build couldn't reach both targets — resources ran out.
+                    // (calcRatioBuild exits its loop either when both caps are hit or when
+                    // a build iteration can't afford the next structure.)
+                    if (workPlanet.factories < maxF || workPlanet.mines < maxM) {
+                        break;
+                    }
                 } else {
                     // Simple building: factories, mines, or defense
                     const current = workPlanet[instr.type] || 0;
@@ -933,6 +948,12 @@
                         result.suppliesUsed += buildResult.suppliesUsed;
                         result.mcUsed += buildResult.mcUsed;
                         result.suppliesSold += buildResult.suppliesSold;
+
+                        // Stop processing further instructions if this one was
+                        // resource-limited. The build code order is priority: if
+                        // we couldn't finish this structure type, later ones
+                        // (which are lower priority) shouldn't steal remaining resources.
+                        if (buildResult.resourceLimited) break;
                     }
                 }
             }
